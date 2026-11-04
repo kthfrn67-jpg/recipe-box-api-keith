@@ -8,6 +8,7 @@ That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 import sqlite3
 
 from flask import Flask, g, jsonify, request
+from security import hash_password
 
 DATABASE = "recipes.db"
 
@@ -85,6 +86,42 @@ def create_recipe():
     ).fetchone()
     return jsonify(recipe_to_dict(row)), 201
 
+@app.post("/users")
+def create_user():
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict) or not all(
+        isinstance(data.get(field), str) and data[field].strip()
+        for field in ("username", "email", "password")
+    ):
+        return jsonify({
+            "error": "username, email, and password are required"
+        }), 400
+
+    username = data["username"].strip()
+    email = data["email"].strip()
+    password_hash = hash_password(data["password"])
+
+    db = get_db()
+
+    try:
+        cur = db.execute(
+            "INSERT INTO users (username, email, password_hash)"
+            " VALUES (?, ?, ?)",
+            (username, email, password_hash),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify({
+            "error": "username or email already exists"
+        }), 409
+
+    return jsonify({
+        "id": cur.lastrowid,
+        "username": username,
+        "email": email,
+    }), 201
 
 @app.patch("/recipes/<int:recipe_id>")
 def update_recipe(recipe_id):
