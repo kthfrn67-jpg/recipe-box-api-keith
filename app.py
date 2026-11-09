@@ -9,6 +9,16 @@ import sqlite3
 
 from flask import Flask, g, jsonify, request
 from security import hash_password, verify_password
+from dotenv import load_dotenv
+import os
+import jwt
+from datetime import datetime, timedelta
+load_dotenv()
+
+JWT_SECRET = os.getenv("JWT_SECRET")
+
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET environment variable is missing")
 
 DATABASE = "recipes.db"
 
@@ -149,10 +159,21 @@ def login():
     if not verify_password(row["password_hash"], data["password"]):
         return jsonify({"error": "invalid credentials"}), 401
 
+    # --- NEW: build JWT payload ---
+    payload = {
+        "sub": str(row["id"]),  # user id as string
+        "exp": datetime.utcnow() + timedelta(hours=1),
+    }
+
+    # --- NEW: sign the token ---
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+    # --- UPDATED: return token with existing data ---
     return jsonify({
         "id": row["id"],
         "username": row["username"],
         "email": row["email"],
+        "token": token,
     }), 200
 
 @app.patch("/recipes/<int:recipe_id>")
