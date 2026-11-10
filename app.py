@@ -73,9 +73,32 @@ def get_recipe(recipe_id):
 
 @app.post("/recipes")
 def create_recipe():
+    # 1) Read Authorization header
+    auth_header = request.headers.get("Authorization")
+    if auth_header is None:
+        return jsonify({"error": "Missing Authorization header"}), 401
+
+    # 2) Check Bearer format and extract token
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Invalid Authorization header format"}), 401
+
+    token = auth_header.split(" ", 1)[1]
+
+    # 3) Verify token signature
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return jsonify({"error": "Invalid token"}), 401
+
+    # 4) Read user ID without enforcing ownership yet
+    user_id = payload.get("sub")
+
+
     data = request.get_json(silent=True)
     if not data or not data.get("title") or not data.get("ingredients"):
         return jsonify({"error": "title and ingredients are required"}), 400
+    
+
     db = get_db()
     try:
         cur = db.execute(
@@ -178,6 +201,21 @@ def login():
 
 @app.patch("/recipes/<int:recipe_id>")
 def update_recipe(recipe_id):
+    auth_header = request.headers.get("Authorization")
+    if auth_header is None:
+        return jsonify({"error": "Missing Authorization header"}), 401
+
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Invalid Authorization header format"}), 401
+
+    token = auth_header.split(" ", 1)[1]
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return jsonify({"error": "Invalid token"}), 401
+
+    user_id = payload.get("sub")
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "a JSON body is required"}), 400
@@ -210,6 +248,21 @@ def update_recipe(recipe_id):
 
 @app.delete("/recipes/<int:recipe_id>")
 def delete_recipe(recipe_id):
+    auth_header = request.headers.get("Authorization")
+    if auth_header is None:
+        return jsonify({"error": "Missing Authorization header"}), 401
+
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Invalid Authorization header format"}), 401
+
+    token = auth_header.split(" ", 1)[1]
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return jsonify({"error": "Invalid token"}), 401
+
+    user_id = payload.get("sub")
     db = get_db()
     cur = db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
     db.commit()
