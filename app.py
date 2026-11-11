@@ -87,6 +87,8 @@ def create_recipe():
     # 3) Verify token signature
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token has expired. Please log in again."}), 401
     except jwt.PyJWTError:
         return jsonify({"error": "Invalid token"}), 401
 
@@ -185,7 +187,7 @@ def login():
     # --- NEW: build JWT payload ---
     payload = {
         "sub": str(row["id"]),  # user id as string
-        "exp": datetime.utcnow() + timedelta(hours=1),
+        "exp": datetime.utcnow() + timedelta(hours=2),
     }
 
     # --- NEW: sign the token ---
@@ -212,6 +214,8 @@ def update_recipe(recipe_id):
 
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token has expired. Please log in again."}), 401
     except jwt.PyJWTError:
         return jsonify({"error": "Invalid token"}), 401
 
@@ -259,6 +263,8 @@ def delete_recipe(recipe_id):
 
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token has expired. Please log in again."}), 401
     except jwt.PyJWTError:
         return jsonify({"error": "Invalid token"}), 401
 
