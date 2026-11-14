@@ -100,17 +100,17 @@ def create_recipe():
     if not data or not data.get("title") or not data.get("ingredients"):
         return jsonify({"error": "title and ingredients are required"}), 400
     
-
     db = get_db()
     try:
         cur = db.execute(
-            "INSERT INTO recipes (title, ingredients, instructions, is_public)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO recipes (title, ingredients, instructions, is_public, owner_id)"
+            " VALUES (?, ?, ?, ?, ?)",
             (
                 data["title"],
                 data["ingredients"],
                 data.get("instructions", ""),
                 1 if data.get("is_public", True) else 0,
+                user_id,  # 👈 stamp the owner here
             ),
         )
         db.commit()
@@ -120,7 +120,7 @@ def create_recipe():
         "SELECT * FROM recipes WHERE id = ?", (cur.lastrowid,)
     ).fetchone()
     return jsonify(recipe_to_dict(row)), 201
-
+    
 @app.post("/users")
 def create_user():
     data = request.get_json(silent=True)
@@ -220,9 +220,25 @@ def update_recipe(recipe_id):
         return jsonify({"error": "Invalid token"}), 401
 
     user_id = payload.get("sub")
+
+    db = get_db()
+
+    # 🔐 1) Load the recipe and check ownership
+    recipe_row = db.execute(
+        "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    if recipe_row is None:
+        return jsonify({"error": "recipe not found"}), 404
+
+    if str(recipe_row["owner_id"]) != user_id:
+        # Authenticated but not the owner
+        return jsonify({"error": "you do not have permission to modify this recipe"}), 403
+
+    # ✅ 2) From here on, we know the user owns this recipe
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "a JSON body is required"}), 400
+
     fields, values = [], []
     for column in ("title", "ingredients", "instructions"):
         if column in data:
@@ -233,8 +249,9 @@ def update_recipe(recipe_id):
         values.append(1 if data["is_public"] else 0)
     if not fields:
         return jsonify({"error": "nothing to update"}), 400
+
     values.append(recipe_id)
-    db = get_db()
+
     try:
         cur = db.execute(
             f"UPDATE recipes SET {', '.join(fields)} WHERE id = ?", values
@@ -242,13 +259,11 @@ def update_recipe(recipe_id):
         db.commit()
     except sqlite3.IntegrityError:
         return jsonify({"error": "a recipe with that title already exists"}), 409
-    if cur.rowcount == 0:
-        return jsonify({"error": "recipe not found"}), 404
+
     row = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
     ).fetchone()
     return jsonify(recipe_to_dict(row))
-
 
 @app.delete("/recipes/<int:recipe_id>")
 def delete_recipe(recipe_id):
@@ -270,12 +285,24 @@ def delete_recipe(recipe_id):
 
     user_id = payload.get("sub")
     db = get_db()
-    cur = db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
-    db.commit()
-    if cur.rowcount == 0:
-        return jsonify({"error": "recipe not found"}), 404
-    return "", 204
 
+    # 🔍 1) Load recipe and check it exists
+    recipe_row = db.execute(
+        "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    if recipe_row is None:
+        return jsonify({"error": "recipe not found"}), 404
+
+    # 🔐 2) Ownership check
+    if str(recipe_row["owner_id"]) != user_id:
+        return jsonify(
+            {"error": "you do not have permission to delete this recipe"}
+        ), 403
+
+    # ✅ 3) Owner is allowed to delete
+    db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
+    db.commit()
+    return "", 204
 
 if __name__ == "__main__":
     app.run(debug=True)
