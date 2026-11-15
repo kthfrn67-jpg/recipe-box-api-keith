@@ -171,7 +171,7 @@ def login():
         }), 400
 
     row = get_db().execute(
-        "SELECT id, username, email, password_hash FROM users "
+        "SELECT id, username, email, password_hash, role FROM users "
         "WHERE username = ?",
         (data["username"].strip(),),
     ).fetchone()
@@ -187,6 +187,7 @@ def login():
     # --- NEW: build JWT payload ---
     payload = {
         "sub": str(row["id"]),  # user id as string
+        "role": row["role"],
         "exp": datetime.utcnow() + timedelta(hours=2),
     }
 
@@ -230,10 +231,11 @@ def update_recipe(recipe_id):
     if recipe_row is None:
         return jsonify({"error": "recipe not found"}), 404
 
-    if str(recipe_row["owner_id"]) != user_id:
-        # Authenticated but not the owner
-        return jsonify({"error": "you do not have permission to modify this recipe"}), 403
-
+     # 🔐 owner OR admin check
+    if str(recipe_row["owner_id"]) != user_id and role != "admin":
+        return jsonify(
+            {"error": "you do not have permission to modify this recipe"}
+            ), 403
     # ✅ 2) From here on, we know the user owns this recipe
     data = request.get_json(silent=True)
     if not data:
@@ -284,25 +286,24 @@ def delete_recipe(recipe_id):
         return jsonify({"error": "Invalid token"}), 401
 
     user_id = payload.get("sub")
+    role = payload.get("role")          # 👈 NEW: pull role from token
+
     db = get_db()
 
-    # 🔍 1) Load recipe and check it exists
     recipe_row = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
     ).fetchone()
     if recipe_row is None:
         return jsonify({"error": "recipe not found"}), 404
 
-    # 🔐 2) Ownership check
-    if str(recipe_row["owner_id"]) != user_id:
+    # 🔐 owner OR admin check
+    if str(recipe_row["owner_id"]) != user_id and role != "admin":
         return jsonify(
             {"error": "you do not have permission to delete this recipe"}
         ), 403
 
-    # ✅ 3) Owner is allowed to delete
     db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
     db.commit()
     return "", 204
-
 if __name__ == "__main__":
     app.run(debug=True)
